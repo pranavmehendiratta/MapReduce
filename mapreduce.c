@@ -4,6 +4,7 @@
 #include "mapreduce.h"
 #include <assert.h>
 
+
 //======== Data structure implementation =========
 
 // Value structure
@@ -25,6 +26,8 @@ typedef struct _hash_table_t_{
     list_t **table; // Fixed size hash table
 } hash_table;
 
+// Global variable
+hash_table **p;
 
 // Intialize the hash table
 hash_table *create_hash_table(int size) { 
@@ -91,7 +94,7 @@ list_t* lookup_string(hash_table *hashtable, char *str){
 
     for(list = hashtable->table[hashval]; list != NULL; list = list->next) {
 	
-	printf("list->key: %s\n", list->key);
+	//printf("list->key: %s\n", list->key);
 	
 	if(strcmp(str, list->key) == 0)
 	    return list;
@@ -114,7 +117,7 @@ int add_key(hash_table *hashtable, char *str,int val){
 
     if (key == NULL) {
 	
-	printf("--- Inside key not found\n");
+	//printf("--- Inside key not found\n");
 
 	/*attempt to allocate memory for list*/
 	if((new_list=malloc(sizeof(list_t)))==NULL) {
@@ -136,7 +139,7 @@ int add_key(hash_table *hashtable, char *str,int val){
 	new_value->next = NULL;
 	new_list->value = new_value;
     } else {
-	printf("--- Inside add value: %s\n", key->key);
+	//printf("--- Inside add value: %s\n", key->key);
 
 	// Allocate value for the value node
 	if((new_value = malloc(sizeof(list_t_value))) == NULL) {
@@ -191,13 +194,12 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 
     for (int i = 0; i < 10; i++) {
 	if (add_key(my_hash_table, "hello", i * 10) == 0) {
-	    printf("Key successfully added\n");
+	    //printf("Key successfully added\n");
 	}
     }
     
     
     list_t *key = lookup_string(my_hash_table, "hello");
-
 
     if (key == NULL) {
 	printf("key not found\n");
@@ -212,6 +214,28 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 
     //      hash(my_hash_table, "hello");
 
+
+    p = malloc(sizeof(hash_table*) * num_reducers);
+    
+    
+    if (p == 0) {
+	printf("cannot allocate memory\n");
+	return;
+    }
+    
+    for (int i = 0; i < num_reducers; i++) {
+	hash_table *temp_table;
+	int size_of_table = 53;
+	
+	//printf("creating table\n");
+	
+	temp_table = create_hash_table(size_of_table);
+	//printf("Done creating table\n");
+	
+	p[i] = temp_table;
+	printf("p[%d]: %p\n", i, p[i]);    
+	//printf("Done adding table\n");
+    }
 
 
 }
