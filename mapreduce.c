@@ -9,7 +9,7 @@
 
 // Value structure
 typedef struct list_t_value_{
-    int value;
+    char* value;
     struct list_t_value_ *next;
 } list_t_value;
 
@@ -71,21 +71,15 @@ int hash(hash_table *hashtable, char *str) {
 
     //for each char, we multiply old hash by 31 and add curr char
     for(;*str!='\0';str++) {
-	hashval=*str+(hashval<<5)-hashval;
+	hashval = *str + (hashval << 5) - hashval;
     }
 
     //we return hash value mod hashtable size so it fits in to necessary range
-    return hashval%hashtable->size;
+    return hashval % hashtable->size;
 }
 
-
-
-
-
-
-
 // Lookup the key and returns either the list of values or NULL
-list_t* lookup_string(hash_table *hashtable, char *str){
+list_t* lookup(hash_table *hashtable, char *str){
     list_t *list;
     unsigned int hashval = hash(hashtable, str);
 
@@ -105,7 +99,7 @@ list_t* lookup_string(hash_table *hashtable, char *str){
 
 
 //inserting a string
-int add_key(hash_table *hashtable, char *str,int val){
+int insert(hash_table *hashtable, char *str, char* val){
     
     list_t *new_list;
     list_t_value *new_value;
@@ -113,7 +107,7 @@ int add_key(hash_table *hashtable, char *str,int val){
     unsigned int hashval = hash(hashtable, str);
 
     // Look for the key in hashtable. This will return the list of values
-    list_t* key = lookup_string(hashtable, str);
+    list_t* key = lookup(hashtable, str);
 
     if (key == NULL) {
 	
@@ -135,7 +129,7 @@ int add_key(hash_table *hashtable, char *str,int val){
 	if((new_value = malloc(sizeof(list_t_value))) == NULL) {
 	    return 1; // error value
 	}
-	new_value->value = val;
+	new_value->value = strdup(val);
 	new_value->next = NULL;
 	new_list->value = new_value;
     } else {
@@ -145,7 +139,7 @@ int add_key(hash_table *hashtable, char *str,int val){
 	if((new_value = malloc(sizeof(list_t_value))) == NULL) {
 	    return 1; // error value
 	}
-	new_value->value = val;
+	new_value->value = strdup(val);
 	new_value->next = key->value;
 	key->value = new_value;
     
@@ -160,9 +154,6 @@ int add_key(hash_table *hashtable, char *str,int val){
     
     return 0;
 }
-
-
-
 
 //======== Function to implement =================
 
@@ -193,27 +184,34 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     my_hash_table = create_hash_table(size_of_table);
 
     for (int i = 0; i < 10; i++) {
-	if (add_key(my_hash_table, "hello", i * 10) == 0) {
+	if (insert(my_hash_table, "a", "1") == 0) {
 	    //printf("Key successfully added\n");
 	}
     }
     
+    //for (int i = 0; i < 10; i++) {
+    //    if (insert(my_hash_table, "b", i * 10) == 0) {
+    //        //printf("Key successfully added\n");
+    //    }
+    //}
+    //
+    //for (int i = 0; i < 10; i++) {
+    //    if (insert(my_hash_table, "c", i * 10) == 0) {
+    //        //printf("Key successfully added\n");
+    //    }
+    //}
     
-    list_t *key = lookup_string(my_hash_table, "hello");
+    list_t *key = lookup(my_hash_table, "a");
 
     if (key == NULL) {
 	printf("key not found\n");
     } else {
 	printf("key found\n");
+	list_t_value *temp;
+	for(temp = key->value; temp != NULL; temp = temp->next) {
+	    printf("value: %s\n", temp->value);
+	}
     }
-
-    list_t_value *temp;
-    for(temp = key->value; temp != NULL; temp = temp->next) {
-        printf("value: %d\n", temp->value);
-    }
-
-    //      hash(my_hash_table, "hello");
-
 
     p = malloc(sizeof(hash_table*) * num_reducers);
     
