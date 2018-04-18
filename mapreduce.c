@@ -8,22 +8,22 @@
 //======== Data structure implementation =========
 
 // Value structure
-typedef struct list_t_value_{
+typedef struct node_value_t {
     char* value;
-    struct list_t_value_ *next;
-} list_t_value;
+    struct node_value_t *next;
+} node_value;
 
 // linked list for seperate chaining
-typedef struct list_t_{
+typedef struct node_t {
     char *key;
-    list_t_value *value;
-    struct list_t_ *next;
-} list_t;
+    node_value *value;
+    struct node_t *next;
+} node;
 
 //hash table structure
-typedef struct _hash_table_t_{
+typedef struct hash_table_t{
     int size; //size of table
-    list_t **table; // Fixed size hash table
+    node **table; // Fixed size hash table
 } hash_table;
 
 // Global variable
@@ -45,7 +45,7 @@ hash_table *create_hash_table(int size) {
     }
 
     /*allocatung memory for table*/
-    new_table->table = malloc(sizeof(list_t*)*size);
+    new_table->table = malloc(sizeof(node*)*size);
     if(new_table->table  ==  NULL) {
 	return NULL;
     }
@@ -79,8 +79,8 @@ int hash(hash_table *hashtable, char *str) {
 }
 
 // Lookup the key and returns either the list of values or NULL
-list_t* lookup(hash_table *hashtable, char *str){
-    list_t *list;
+node* lookup(hash_table *hashtable, char *str){
+    node *list;
     unsigned int hashval = hash(hashtable, str);
 
     //printf("hashval in lookup: %d\n", hashval);
@@ -101,20 +101,20 @@ list_t* lookup(hash_table *hashtable, char *str){
 //inserting a string
 int insert(hash_table *hashtable, char *str, char* val){
     
-    list_t *new_list;
-    list_t_value *new_value;
+    node *new_list;
+    node_value *new_value;
     //      list_t *current_list; //checking for duplicates
     unsigned int hashval = hash(hashtable, str);
 
     // Look for the key in hashtable. This will return the list of values
-    list_t* key = lookup(hashtable, str);
+    node* key = lookup(hashtable, str);
 
     if (key == NULL) {
 	
 	//printf("--- Inside key not found\n");
 
 	/*attempt to allocate memory for list*/
-	if((new_list=malloc(sizeof(list_t)))==NULL) {
+	if((new_list=malloc(sizeof(node)))==NULL) {
 	    return 1; // error value
 	}
 
@@ -126,7 +126,7 @@ int insert(hash_table *hashtable, char *str, char* val){
 	
 	
 	// Allocate value for the value node
-	if((new_value = malloc(sizeof(list_t_value))) == NULL) {
+	if((new_value = malloc(sizeof(node_value))) == NULL) {
 	    return 1; // error value
 	}
 	new_value->value = strdup(val);
@@ -136,7 +136,7 @@ int insert(hash_table *hashtable, char *str, char* val){
 	//printf("--- Inside add value: %s\n", key->key);
 
 	// Allocate value for the value node
-	if((new_value = malloc(sizeof(list_t_value))) == NULL) {
+	if((new_value = malloc(sizeof(node_value))) == NULL) {
 	    return 1; // error value
 	}
 	new_value->value = strdup(val);
@@ -176,12 +176,13 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
     return hash % num_partitions;
 }
 
-void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, 
-	Partitioner partition) {
+void test() {
 
     hash_table *my_hash_table;
     int size_of_table = 53;
     my_hash_table = create_hash_table(size_of_table);
+    
+    // ------------ Testing the insert after this -----------------------
 
     for (int i = 0; i < 10; i++) {
 	if (insert(my_hash_table, "a", "1") == 0) {
@@ -189,32 +190,67 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 	}
     }
     
-    //for (int i = 0; i < 10; i++) {
-    //    if (insert(my_hash_table, "b", i * 10) == 0) {
-    //        //printf("Key successfully added\n");
-    //    }
-    //}
-    //
-    //for (int i = 0; i < 10; i++) {
-    //    if (insert(my_hash_table, "c", i * 10) == 0) {
-    //        //printf("Key successfully added\n");
-    //    }
-    //}
+    for (int i = 0; i < 10; i++) {
+        if (insert(my_hash_table, "b", "2") == 0) {
+            //printf("Key successfully added\n");
+        }
+    }
     
-    list_t *key = lookup(my_hash_table, "a");
+    for (int i = 0; i < 10; i++) {
+        if (insert(my_hash_table, "c", "3") == 0) {
+            //printf("Key successfully added\n");
+        }
+    }
+    
+    // ------------ Testing the lookup after this -----------------------
+
+    node *key = lookup(my_hash_table, "a");
 
     if (key == NULL) {
 	printf("key not found\n");
     } else {
-	printf("key found\n");
-	list_t_value *temp;
+	printf("key found: %s\n", key->key);
+	node_value *temp;
 	for(temp = key->value; temp != NULL; temp = temp->next) {
 	    printf("value: %s\n", temp->value);
 	}
     }
 
-    p = malloc(sizeof(hash_table*) * num_reducers);
+
+    key = lookup(my_hash_table, "b");
+
+    if (key == NULL) {
+	printf("key not found\n");
+    } else {
+	printf("key found: %s\n", key->key);
+	node_value *temp;
+	for(temp = key->value; temp != NULL; temp = temp->next) {
+	    printf("value: %s\n", temp->value);
+	}
+    }
+
+    key = lookup(my_hash_table, "c");
+
+    if (key == NULL) {
+	printf("key not found\n");
+    } else {
+	printf("key found: %s\n", key->key);
+	node_value *temp;
+	for(temp = key->value; temp != NULL; temp = temp->next) {
+	    printf("value: %s\n", temp->value);
+	}
+    }
+}
+
+
+
+void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, 
+	Partitioner partition) {
+
+    // Testing
+    test();
     
+    p = malloc(sizeof(hash_table*) * num_reducers);
     
     if (p == 0) {
 	printf("cannot allocate memory\n");
