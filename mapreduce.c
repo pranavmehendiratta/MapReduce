@@ -4,7 +4,6 @@
 #include "mapreduce.h"
 #include <assert.h>
 
-
 //======== Data structure implementation =========
 
 // Value structure
@@ -27,7 +26,7 @@ typedef struct hash_table_t{
 } hash_table;
 
 // Global variable
-hash_table **p;
+hash_table **parts;
 
 // Intialize the hash table
 hash_table *create_hash_table(int size) { 
@@ -66,7 +65,7 @@ int hash(hash_table *hashtable, char *str) {
     unsigned int hashval;
 
     //hashing from 0
-    hashval=0;
+    hashval = 0;
 
     //for each char, we multiply old hash by 31 and add curr char
     for(; *str!='\0'; str++) {
@@ -76,17 +75,19 @@ int hash(hash_table *hashtable, char *str) {
     //we return hash value mod hashtable size so it fits in to necessary range
     
     return hashval % hashtable->size;
-    //return 1;
 }
 
-// Lookup the key and returns either the list of values or NULL
+/* Lookups the given key and return key of node type 
+ * otherwise returns NULL
+ */
 node* lookup(hash_table *hashtable, char *str){
     node *list;
     unsigned int hashval = hash(hashtable, str);
 
     //printf("hashval in lookup: %d\n", hashval);
-    /* go to correct list based on hash value and see if str is in the list. If so, return a pointer to the list pointer */
-
+    
+    // Linearly search through the bucket incase there is a collision for the 
+    // current hashtable
     for(list = hashtable->table[hashval]; list != NULL; list = list->next) {
 	
 	//printf("list->key: %s\n", list->key);
@@ -98,8 +99,9 @@ node* lookup(hash_table *hashtable, char *str){
     return NULL;
 }
 
-
-//inserting a string
+/* Inserts the given key in the given hashtable by creating
+ * new objects of node and node_value type
+ */
 int insert(hash_table *hashtable, char *str, char* val){
     
     node *new_list;
@@ -225,8 +227,8 @@ void free_values(node_value* nv) {
     for (; temp != NULL; temp = nv) {
 	nv = nv->next;
 	//printf("      value: %s, addr: %p\n", temp->value, temp);
-	free(temp->value);
-	free(temp);
+	free(temp->value); // Freeing the strdup memory
+	free(temp); // Freeing the node of the linkedlist
 	//printf("      checking the value after freeing: %s\n", temp->value);
     }
     //printf("      ## free_values: Done freeing values at: %p\n", nv);
@@ -243,8 +245,8 @@ void free_node(node* n) {
 	n = n->next;
 	//printf("    Freeing the values list for key: %s, addr: %p\n", temp->key, temp);	
 	free_values(temp->value);
-	free(temp->key);
-	free(temp);
+	free(temp->key); // Freeing the strdup memory
+	free(temp); // Freeing hte node of the linkedlist
 	//printf("    checking the value after freeing: %s\n", temp->key);
     }
     
@@ -268,9 +270,18 @@ void free_hash_table(hash_table *ht) {
 	}
     }
     //printf("######## free_hash_table: Done free hash_table at: %p\n", ht);
-    free(ht->table);
-    free(ht);
+    free(ht->table); // Freeing the memory for the hashtable - array
+    free(ht); // Freeing the hashtable pointer
 }
+
+void free_partition(hash_table **p, int num_reducers) {
+    // Freeing the memory allocated for hash tables
+    for (int i = 0; i < num_reducers; i++) {
+	free_hash_table(p[i]);
+    }
+    free(p);
+}
+
 
 //======== Function to implement =================
 
@@ -293,41 +304,38 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
     return hash % num_partitions;
 }
 
-void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, 
-	Partitioner partition) {
+void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, Partitioner partition) {
 
     // Testing
-    hash_table *my_hash_table;
-    int size_of_table = 53;
-    my_hash_table = create_hash_table(size_of_table);
+    //hash_table *my_hash_table;
+    //int size_of_table = 53;
+    //my_hash_table = create_hash_table(size_of_table);
 
-    printf("Main: addr of hash_table: %p\n", my_hash_table);
+    //printf("Main: addr of hash_table: %p\n", my_hash_table);
 
-    test(my_hash_table);
-    free_hash_table(my_hash_table);
-
+    //test(my_hash_table);
+    //free_hash_table(my_hash_table);
+   
+    // parts is a global variable for the partitions
+    parts = malloc(sizeof(hash_table*) * num_reducers);
     
-    /*
-    p = malloc(sizeof(hash_table*) * num_reducers);
-    
-    if (p == 0) {
-	printf("cannot allocate memory\n");
+    if (parts == 0) {
+	printf("cannot allocate memory for partitions\n");
 	return;
     }
-    
+   
+    // Creating one hash table for each partition
     for (int i = 0; i < num_reducers; i++) {
 	hash_table *temp_table;
 	int size_of_table = 53;
-	
-	//printf("creating table\n");
-	
 	temp_table = create_hash_table(size_of_table);
-	//printf("Done creating table\n");
-	
-	p[i] = temp_table;
-	//printf("p[%d]: %p\n", i, p[i]);    
-	//printf("Done adding table\n");
+	parts[i] = temp_table;
     }
-    */
+
+    
+
+
+    // Free the partition created
+    free_partition(parts, num_reducers);
 
 }
