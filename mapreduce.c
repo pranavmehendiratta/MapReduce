@@ -45,7 +45,7 @@ hash_table *create_hash_table(int size) {
     }
 
     /*allocatung memory for table*/
-    new_table->table = malloc(sizeof(node*)*size);
+    new_table->table = malloc(sizeof(node*) * size);
     if(new_table->table  ==  NULL) {
 	return NULL;
     }
@@ -57,7 +57,6 @@ hash_table *create_hash_table(int size) {
 
     /*set the table's size*/
     new_table->size = size;
-
     return new_table;
 }
 
@@ -70,12 +69,14 @@ int hash(hash_table *hashtable, char *str) {
     hashval=0;
 
     //for each char, we multiply old hash by 31 and add curr char
-    for(;*str!='\0';str++) {
+    for(; *str!='\0'; str++) {
 	hashval = *str + (hashval << 5) - hashval;
     }
 
     //we return hash value mod hashtable size so it fits in to necessary range
+    
     return hashval % hashtable->size;
+    //return 1;
 }
 
 // Lookup the key and returns either the list of values or NULL
@@ -151,56 +152,30 @@ int insert(hash_table *hashtable, char *str, char* val){
 	
     
     }
-    
     return 0;
 }
 
-//======== Function to implement =================
+void test(hash_table *my_hash_table) {
 
-// Different function pointer types used by MR
-typedef char *(*Getter)(char *key, int partition_number);
-typedef void (*Mapper)(char *file_name);
-typedef void (*Reducer)(char *key, Getter get_func, int partition_number);
-typedef unsigned long (*Partitioner)(char *key, int num_partitions);
-
-// External functions: these are what you must define
-void MR_Emit(char *key, char *value) {
-
-}
-
-unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *key++) != '\0')
-	hash = hash * 33 + c;
-    return hash % num_partitions;
-}
-
-void test() {
-
-    hash_table *my_hash_table;
-    int size_of_table = 53;
-    my_hash_table = create_hash_table(size_of_table);
-    
     // ------------ Testing the insert after this -----------------------
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 5; i++) {
 	if (insert(my_hash_table, "a", "1") == 0) {
 	    //printf("Key successfully added\n");
 	}
     }
-    
-    for (int i = 0; i < 10; i++) {
+
+    for (int i = 0; i < 5; i++) {
         if (insert(my_hash_table, "b", "2") == 0) {
             //printf("Key successfully added\n");
         }
     }
     
-    for (int i = 0; i < 10; i++) {
-        if (insert(my_hash_table, "c", "3") == 0) {
-            //printf("Key successfully added\n");
-        }
-    }
+    //for (int i = 0; i < 2; i++) {
+    //    if (insert(my_hash_table, "c", "3") == 0) {
+    //        //printf("Key successfully added\n");
+    //    }
+    //}
     
     // ------------ Testing the lookup after this -----------------------
 
@@ -229,27 +204,108 @@ void test() {
 	}
     }
 
-    key = lookup(my_hash_table, "c");
+    //key = lookup(my_hash_table, "c");
 
-    if (key == NULL) {
-	printf("key not found\n");
-    } else {
-	printf("key found: %s\n", key->key);
-	node_value *temp;
-	for(temp = key->value; temp != NULL; temp = temp->next) {
-	    printf("value: %s\n", temp->value);
-	}
-    }
+    //if (key == NULL) {
+    //    printf("key not found\n");
+    //} else {
+    //    printf("key found: %s\n", key->key);
+    //    node_value *temp;
+    //    for(temp = key->value; temp != NULL; temp = temp->next) {
+    //        printf("value: %s\n", temp->value);
+    //    }
+    //}
+
 }
 
 
+void free_values(node_value* nv) {
+   // printf("      ## free_values: addr of values: %p\n", nv);
+    node_value* temp = nv;
+    for (; temp != NULL; temp = nv) {
+	nv = nv->next;
+	//printf("      value: %s, addr: %p\n", temp->value, temp);
+	free(temp);
+	//printf("      checking the value after freeing: %s\n", temp->value);
+    }
+    //printf("      ## free_values: Done freeing values at: %p\n", nv);
+}
+
+
+
+void free_node(node* n) {
+    //printf("    #### free_node: addr of node: %p\n", n);
+    
+    // Going over all the values for the given bucket
+    node* temp = n;
+    for (; temp != NULL; temp = n) {
+	n = n->next;
+	//printf("    Freeing the values list for key: %s, addr: %p\n", temp->key, temp);	
+	free_values(temp->value);
+	free(temp);
+	//printf("    checking the value after freeing: %s\n", temp->key);
+    }
+    
+    //printf("    #### free_node: Done freeing node at: %p\n", n);
+}
+
+
+void free_hash_table(hash_table *ht) {
+    //printf("######## free_hash_table: addr of hash_table: %p\n", ht);
+    
+    // Going over all the elements in the hashtable
+    for (int i = 0; i < ht->size; i++) {
+	if (ht->table[i] != NULL) {
+	    //printf("elem %d in table: %p. Not null\n", i, ht->table[i]);
+	    node* temp = ht->table[i];
+
+	    // Sending the node list (bucket) to be freed
+	    //printf("key: %s, addr: %p\n", temp->key, temp);
+	    free_node(temp);
+	    //printf("checking the value after freeing: %s\n", temp->key);
+	}
+    }
+    //printf("######## free_hash_table: Done free hash_table at: %p\n", ht);
+    free(ht->table);
+    free(ht);
+}
+
+//======== Function to implement =================
+
+// Different function pointer types used by MR
+typedef char *(*Getter)(char *key, int partition_number);
+typedef void (*Mapper)(char *file_name);
+typedef void (*Reducer)(char *key, Getter get_func, int partition_number);
+typedef unsigned long (*Partitioner)(char *key, int num_partitions);
+
+// External functions: these are what you must define
+void MR_Emit(char *key, char *value) {
+
+}
+
+unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
+    unsigned long hash = 5381;
+    int c;
+    while ((c = *key++) != '\0')
+	hash = hash * 33 + c;
+    return hash % num_partitions;
+}
 
 void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, 
 	Partitioner partition) {
 
     // Testing
-    test();
+    hash_table *my_hash_table;
+    int size_of_table = 53;
+    my_hash_table = create_hash_table(size_of_table);
+
+    printf("Main: addr of hash_table: %p\n", my_hash_table);
+
+    test(my_hash_table);
+    free_hash_table(my_hash_table);
+
     
+    /*
     p = malloc(sizeof(hash_table*) * num_reducers);
     
     if (p == 0) {
@@ -267,9 +323,9 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 	//printf("Done creating table\n");
 	
 	p[i] = temp_table;
-	printf("p[%d]: %p\n", i, p[i]);    
+	//printf("p[%d]: %p\n", i, p[i]);    
 	//printf("Done adding table\n");
     }
-
+    */
 
 }
