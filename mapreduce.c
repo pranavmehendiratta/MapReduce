@@ -225,6 +225,7 @@ void free_values(node_value* nv) {
     for (; temp != NULL; temp = nv) {
 	nv = nv->next;
 	//printf("      value: %s, addr: %p\n", temp->value, temp);
+	free(temp->value);
 	free(temp);
 	//printf("      checking the value after freeing: %s\n", temp->value);
     }
@@ -242,6 +243,7 @@ void free_node(node* n) {
 	n = n->next;
 	//printf("    Freeing the values list for key: %s, addr: %p\n", temp->key, temp);	
 	free_values(temp->value);
+	free(temp->key);
 	free(temp);
 	//printf("    checking the value after freeing: %s\n", temp->key);
     }
