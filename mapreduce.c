@@ -1,11 +1,13 @@
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "mapreduce.h"
 #include <assert.h>
+#include <pthread.h>
 
-//======== Data structure implementation =========
-
+// ====== Type for the data structure ========
 // Value structure
 typedef struct node_value_t {
     char* value;
@@ -25,8 +27,19 @@ typedef struct hash_table_t{
     node **table; // Fixed size hash table
 } hash_table;
 
-// Global variable
-hash_table **parts;
+// ======= Global variables ==========
+hash_table **parts; // for holding the partitions
+Partitioner partFunc; // Global variable for partition function
+int numReducers;
+int numMappers;
+
+// ====== Wrappers for pthread library ==========
+#define Pthread_mutex_lock(m)                                   assert(pthread_mutex_lock(m) == 0);
+#define Pthread_mutex_unlock(m)                                 assert(pthread_mutex_unlock(m) == 0);
+#define Pthread_create(thread, attr, start_routine, arg)        assert(pthread_create(thread, attr, start_routine, arg) == 0);
+#define Pthread_join(thread, value_ptr)                         assert(pthread_join(thread, value_ptr) == 0);
+
+//======== Data structure implementation =========
 
 // Intialize the hash table
 hash_table *create_hash_table(int size) { 
@@ -173,38 +186,38 @@ void test(hash_table *my_hash_table) {
         }
     }
     
-    //for (int i = 0; i < 2; i++) {
-    //    if (insert(my_hash_table, "c", "3") == 0) {
-    //        //printf("Key successfully added\n");
-    //    }
-    //}
+    for (int i = 0; i < 2; i++) {
+        if (insert(my_hash_table, "c", "3") == 0) {
+            //printf("Key successfully added\n");
+        }
+    }
     
     // ------------ Testing the lookup after this -----------------------
 
-    node *key = lookup(my_hash_table, "a");
+    //node *key = lookup(my_hash_table, "a");
 
-    if (key == NULL) {
-	printf("key not found\n");
-    } else {
-	printf("key found: %s\n", key->key);
-	node_value *temp;
-	for(temp = key->value; temp != NULL; temp = temp->next) {
-	    printf("value: %s\n", temp->value);
-	}
-    }
+    //if (key == NULL) {
+    //    printf("key not found\n");
+    //} else {
+    //    printf("key found: %s\n", key->key);
+    //    node_value *temp;
+    //    for(temp = key->value; temp != NULL; temp = temp->next) {
+    //        printf("value: %s\n", temp->value);
+    //    }
+    //}
 
 
-    key = lookup(my_hash_table, "b");
+    //key = lookup(my_hash_table, "b");
 
-    if (key == NULL) {
-	printf("key not found\n");
-    } else {
-	printf("key found: %s\n", key->key);
-	node_value *temp;
-	for(temp = key->value; temp != NULL; temp = temp->next) {
-	    printf("value: %s\n", temp->value);
-	}
-    }
+    //if (key == NULL) {
+    //    printf("key not found\n");
+    //} else {
+    //    printf("key found: %s\n", key->key);
+    //    node_value *temp;
+    //    for(temp = key->value; temp != NULL; temp = temp->next) {
+    //        printf("value: %s\n", temp->value);
+    //    }
+    //}
 
     //key = lookup(my_hash_table, "c");
 
@@ -274,26 +287,61 @@ void free_hash_table(hash_table *ht) {
     free(ht); // Freeing the hashtable pointer
 }
 
-void free_partition(hash_table **p, int num_reducers) {
+void free_partition(hash_table **p) {
+    // TODO: This does not work perfectly,
+    // free_hash_table is working correctly 
+
     // Freeing the memory allocated for hash tables
-    for (int i = 0; i < num_reducers; i++) {
+    for (int i = 0; i < numReducers; i++) {
 	free_hash_table(p[i]);
     }
     free(p);
 }
 
+void dump_hash_table(hash_table* ht) {
+    
+    // Going over the buckets
+    for (int i = 0; i < ht->size; i++) {
+	printf("    ");
+	
+	// Checking if the bucket is not null
+	if (ht->table[i] != NULL) {
+	    printf("%d: ", i);
+	    node* temp = ht->table[i];
+
+	    // Printing out the keys in that bucket
+	    for (; temp != NULL; temp = temp->next) {
+		printf("\"%s\" -> [", temp->key);
+		node_value* temp1 = temp->value;
+
+		// Printing out the values in for that key
+		for (; temp1 != NULL; temp1 = temp1->next) {
+		    printf(" \"%s\" ->", temp1->value);
+		}
+		printf(" NULL ], ");
+	    }
+	} else {
+	    printf("%d:", i);
+	}
+	
+	printf("\n");
+    }
+}
+
+void dump_partitions(hash_table** p) {
+    for (int i = 0; i < numReducers; i++) {
+        printf("Parition: %d -->\n", i);
+	dump_hash_table(p[i]);
+    }
+}
 
 //======== Function to implement =================
 
-// Different function pointer types used by MR
-typedef char *(*Getter)(char *key, int partition_number);
-typedef void (*Mapper)(char *file_name);
-typedef void (*Reducer)(char *key, Getter get_func, int partition_number);
-typedef unsigned long (*Partitioner)(char *key, int num_partitions);
-
-// External functions: these are what you must define
 void MR_Emit(char *key, char *value) {
-
+    //printf("num reducers: %d\n", numReducers); 
+    unsigned long partNum = (*partFunc)(key, numReducers);
+    printf("%s, %s, part index: %lu\n", key, value, partNum);
+    insert(parts[partNum], key, value);
 }
 
 unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
@@ -306,16 +354,25 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
 
 void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, Partitioner partition) {
 
+    /*
     // Testing
-    //hash_table *my_hash_table;
-    //int size_of_table = 53;
-    //my_hash_table = create_hash_table(size_of_table);
+    hash_table *my_hash_table;
+    int size_of_table = 53;
+    my_hash_table = create_hash_table(size_of_table);
 
-    //printf("Main: addr of hash_table: %p\n", my_hash_table);
+    printf("Main: addr of hash_table: %p\n", my_hash_table);
 
-    //test(my_hash_table);
-    //free_hash_table(my_hash_table);
-   
+    test(my_hash_table);
+    dump_hash_table(my_hash_table);
+    free_hash_table(my_hash_table);
+    //*/
+
+    //*
+    // Setting the global variables
+    partFunc = partition;
+    numReducers = num_reducers;
+    numMappers = num_mappers;
+
     // parts is a global variable for the partitions
     parts = malloc(sizeof(hash_table*) * num_reducers);
     
@@ -323,19 +380,36 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 	printf("cannot allocate memory for partitions\n");
 	return;
     }
+    
+    int numthreads = 1;  // Change this to number of mappers
    
     // Creating one hash table for each partition
     for (int i = 0; i < num_reducers; i++) {
 	hash_table *temp_table;
-	int size_of_table = 53;
+	int size_of_table = 11;
 	temp_table = create_hash_table(size_of_table);
 	parts[i] = temp_table;
     }
 
+    printf("Input File: %s\n", argv[1]);
+
+    // Variable for mappers
+    pthread_t mappers_id[numthreads];
+
+    //// Create the # of mappers
+    for (int i = 0; i < numthreads; i++) {
+        Pthread_create(&mappers_id[i], NULL, (void *)(*map), argv[1]);
+    }
+
+    // Join all the mappers
+    for (int i = 0; i < numthreads; i++) {
+        Pthread_join(mappers_id[i], NULL);
+    }
+
+    dump_partitions(parts);
     
-
-
     // Free the partition created
-    free_partition(parts, num_reducers);
-
+    //printf("Starting to free the partitions...\n\n");
+    free_partition(parts);
+    //*/
 }
