@@ -22,9 +22,10 @@ typedef struct node_t {
 } node;
 
 //hash table structure
-typedef struct hash_table_t{
+typedef struct hash_table_t {
     int size; //size of table
     node **table; // Fixed size hash table
+    pthread_mutex_t **lock; 
 } hash_table;
 
 // ======= Global variables ==========
@@ -34,6 +35,7 @@ int numReducers;
 int numMappers;
 
 // ====== Wrappers for pthread library ==========
+#define hash_table_size 101
 #define Pthread_mutex_lock(m)                                   assert(pthread_mutex_lock(m) == 0);
 #define Pthread_mutex_unlock(m)                                 assert(pthread_mutex_unlock(m) == 0);
 #define Pthread_create(thread, attr, start_routine, arg)        assert(pthread_create(thread, attr, start_routine, arg) == 0);
@@ -56,15 +58,23 @@ hash_table *create_hash_table(int size) {
 	return NULL;
     }
 
-    /*allocatung memory for table*/
+    // Allocating memory for table
     new_table->table = malloc(sizeof(node*) * size);
     if(new_table->table  ==  NULL) {
+	return NULL;
+    }
+
+    // Allocating memory for the lock
+    new_table->lock = malloc(sizeof(pthread_mutex_t*) * size);
+    if(new_table->lock  ==  NULL) {
 	return NULL;
     }
 
     /*initialize the lements of the table*/
     for(int i = 0; i < size; i++)  {
 	new_table->table[i] = NULL;
+	new_table->lock[i] = malloc(sizeof(pthread_mutex_t));
+	pthread_mutex_init(new_table->lock[i], NULL);
     }
 
     /*set the table's size*/
@@ -122,6 +132,9 @@ int insert(hash_table *hashtable, char *str, char* val){
     //      list_t *current_list; //checking for duplicates
     unsigned int hashval = hash(hashtable, str);
 
+    // grabbing the lock for current bucket 
+    pthread_mutex_lock(hashtable->lock[hashval]); 
+    
     // Look for the key in hashtable. This will return the list of values
     node* key = lookup(hashtable, str);
 
@@ -129,8 +142,8 @@ int insert(hash_table *hashtable, char *str, char* val){
 	
 	//printf("--- Inside key not found\n");
 
-	/*attempt to allocate memory for list*/
-	if((new_list=malloc(sizeof(node)))==NULL) {
+	// Allocate memory for new node for the given key
+	if((new_list = malloc(sizeof(node)))==NULL) {
 	    return 1; // error value
 	}
 
@@ -167,6 +180,9 @@ int insert(hash_table *hashtable, char *str, char* val){
 	
     
     }
+    // Leaving the lock for current bucket 
+    pthread_mutex_unlock(hashtable->lock[hashval]); 
+    
     return 0;
 }
 
@@ -272,6 +288,7 @@ void free_hash_table(hash_table *ht) {
     
     // Going over all the elements in the hashtable
     for (int i = 0; i < ht->size; i++) {
+	free(ht->lock[i]); // Free the lock for that bucket
 	if (ht->table[i] != NULL) {
 	    //printf("elem %d in table: %p. Not null\n", i, ht->table[i]);
 	    node* temp = ht->table[i];
@@ -283,6 +300,7 @@ void free_hash_table(hash_table *ht) {
 	}
     }
     //printf("######## free_hash_table: Done free hash_table at: %p\n", ht);
+    free(ht->lock);
     free(ht->table); // Freeing the memory for the hashtable - array
     free(ht); // Freeing the hashtable pointer
 }
@@ -294,23 +312,24 @@ void free_partition(hash_table **p) {
     // Freeing the memory allocated for hash tables
     for (int i = 0; i < numReducers; i++) {
 	free_hash_table(p[i]);
+	//free(p[i]);
     }
     free(p);
 }
 
 void dump_hash_table(hash_table* ht) {
-    
     // Going over the buckets
     for (int i = 0; i < ht->size; i++) {
 	printf("    ");
 	
 	// Checking if the bucket is not null
 	if (ht->table[i] != NULL) {
-	    printf("%d: ", i);
+	    printf("%d: \n", i);
 	    node* temp = ht->table[i];
 
 	    // Printing out the keys in that bucket
 	    for (; temp != NULL; temp = temp->next) {
+		printf("        ");
 		printf("\"%s\" -> [", temp->key);
 		node_value* temp1 = temp->value;
 
@@ -318,7 +337,7 @@ void dump_hash_table(hash_table* ht) {
 		for (; temp1 != NULL; temp1 = temp1->next) {
 		    printf(" \"%s\" ->", temp1->value);
 		}
-		printf(" NULL ], ");
+		printf(" NULL ]\n");
 	    }
 	} else {
 	    printf("%d:", i);
@@ -328,10 +347,28 @@ void dump_hash_table(hash_table* ht) {
     }
 }
 
+void dump_hash_table_keys(hash_table* ht) {
+    // Going over the buckets
+    for (int i = 0; i < ht->size; i++) {
+	
+	// Checking if the bucket is not null
+	if (ht->table[i] != NULL) {
+	    node* temp = ht->table[i];
+
+	    // Printing out the keys in that bucket
+	    for (; temp != NULL; temp = temp->next) {
+		printf("%s\n", temp->key);
+		//node_value* temp1 = temp->value;
+	    }
+	} 
+    }
+}
+
 void dump_partitions(hash_table** p) {
     for (int i = 0; i < numReducers; i++) {
         printf("Parition: %d -->\n", i);
-	dump_hash_table(p[i]);
+	//dump_hash_table(p[i]);
+	dump_hash_table_keys(p[i]);
     }
 }
 
@@ -340,7 +377,7 @@ void dump_partitions(hash_table** p) {
 void MR_Emit(char *key, char *value) {
     //printf("num reducers: %d\n", numReducers); 
     unsigned long partNum = (*partFunc)(key, numReducers);
-    printf("%s, %s, part index: %lu\n", key, value, partNum);
+    //printf("%s, %s, part index: %lu\n", key, value, partNum);
     insert(parts[partNum], key, value);
 }
 
@@ -368,37 +405,44 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     //*/
 
     //*
+    // Lock for giving a file to the mapper
+    pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER; 
+
     // Setting the global variables
     partFunc = partition;
     numReducers = num_reducers;
     numMappers = num_mappers;
 
     // parts is a global variable for the partitions
-    parts = malloc(sizeof(hash_table*) * num_reducers);
+    parts = malloc(sizeof(hash_table*) * numReducers);
     
     if (parts == 0) {
 	printf("cannot allocate memory for partitions\n");
 	return;
     }
     
-    int numthreads = 1;  // Change this to number of mappers
-   
     // Creating one hash table for each partition
-    for (int i = 0; i < num_reducers; i++) {
+    for (int i = 0; i < numReducers; i++) {
 	hash_table *temp_table;
-	int size_of_table = 11;
-	temp_table = create_hash_table(size_of_table);
+	temp_table = create_hash_table(hash_table_size);
 	parts[i] = temp_table;
     }
 
+    // # of mappers to create 
+    int numthreads = 5; 
+   
     printf("Input File: %s\n", argv[1]);
 
     // Variable for mappers
     pthread_t mappers_id[numthreads];
 
-    //// Create the # of mappers
-    for (int i = 0; i < numthreads; i++) {
-        Pthread_create(&mappers_id[i], NULL, (void *)(*map), argv[1]);
+    // Create the # of mappers
+    int file_proc = 0;
+    for ( ; file_proc < numthreads; ) {
+	Pthread_mutex_lock(&file_lock);
+	Pthread_create(&mappers_id[file_proc], NULL, (void *)(*map), argv[1]);
+	file_proc++;
+	Pthread_mutex_unlock(&file_lock);
     }
 
     // Join all the mappers
