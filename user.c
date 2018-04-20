@@ -4,7 +4,7 @@
 #include "mapreduce.c"
 
 void Map(char *file_name) {
-    printf("file_name in Map function: %s\n", file_name);
+    //printf("file_name in Map function: %s\n", file_name);
     
     FILE *fp = fopen(file_name, "r");
     assert(fp != NULL);
@@ -13,7 +13,7 @@ void Map(char *file_name) {
     size_t size = 0;
     
     
-    printf("Calling MR_Emit...\n");
+    //printf("Calling MR_Emit...\n");
     
     while (getline(&line, &size, fp) != -1) {
         char *token, *dummy = line;
@@ -22,7 +22,7 @@ void Map(char *file_name) {
         }
     }
 
-    printf("Done with Map function...\n");
+    //printf("Done with Map function...\n");
 
     fclose(fp);
 }

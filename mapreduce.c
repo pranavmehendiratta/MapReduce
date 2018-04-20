@@ -6,6 +6,7 @@
 #include "mapreduce.h"
 #include <assert.h>
 #include <pthread.h>
+#include <sys/types.h>
 
 // ====== Type for the data structure ========
 // Value structure
@@ -28,11 +29,19 @@ typedef struct hash_table_t {
     pthread_mutex_t **lock; 
 } hash_table;
 
+typedef struct proc_files_params_t {
+    int numFiles; 
+    Mapper map;
+    pthread_mutex_t file_lock;
+    char **files;
+} proc_files;
+
 // ======= Global variables ==========
 hash_table **parts; // for holding the partitions
 Partitioner partFunc; // Global variable for partition function
 int numReducers;
 int numMappers;
+int filesProcessed;
 
 // ====== Wrappers for pthread library ==========
 #define hash_table_size 101
@@ -64,7 +73,7 @@ hash_table *create_hash_table(int size) {
 	return NULL;
     }
 
-    // Allocating memory for the lock
+    // Allocating memory for the lock array
     new_table->lock = malloc(sizeof(pthread_mutex_t*) * size);
     if(new_table->lock  ==  NULL) {
 	return NULL;
@@ -73,8 +82,8 @@ hash_table *create_hash_table(int size) {
     /*initialize the lements of the table*/
     for(int i = 0; i < size; i++)  {
 	new_table->table[i] = NULL;
-	new_table->lock[i] = malloc(sizeof(pthread_mutex_t));
-	pthread_mutex_init(new_table->lock[i], NULL);
+	new_table->lock[i] = malloc(sizeof(pthread_mutex_t)); // Allocating memory for the lock
+	pthread_mutex_init(new_table->lock[i], NULL); // Initializing the lock
     }
 
     /*set the table's size*/
@@ -367,17 +376,15 @@ void dump_hash_table_keys(hash_table* ht) {
 void dump_partitions(hash_table** p) {
     for (int i = 0; i < numReducers; i++) {
         printf("Parition: %d -->\n", i);
-	//dump_hash_table(p[i]);
-	dump_hash_table_keys(p[i]);
+	dump_hash_table(p[i]);
+	//dump_hash_table_keys(p[i]);
     }
 }
 
 //======== Function to implement =================
 
 void MR_Emit(char *key, char *value) {
-    //printf("num reducers: %d\n", numReducers); 
     unsigned long partNum = (*partFunc)(key, numReducers);
-    //printf("%s, %s, part index: %lu\n", key, value, partNum);
     insert(parts[partNum], key, value);
 }
 
@@ -389,8 +396,41 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
     return hash % num_partitions;
 }
 
+/* This will keep the thread busy as long as there 
+ * are more files to process
+ */
+void process_files(proc_files* params) {
+    
+    int numFiles = params->numFiles;
+    char **files = params->files;
+    pthread_mutex_t file_lock = params->file_lock;
+    Mapper map = params->map;
+
+    while(1) {	
+
+	int file_to_proc;
+    
+	// Find the file to process
+	Pthread_mutex_lock(&file_lock);
+	if (filesProcessed == numFiles) {
+	    Pthread_mutex_unlock(&file_lock);
+	    return;
+	}
+	file_to_proc = filesProcessed;	
+	filesProcessed++;
+	Pthread_mutex_unlock(&file_lock);
+	
+	printf("Thread: %lu, File being processed: %d->%s\n", pthread_self(), file_to_proc, files[file_to_proc]);
+		
+	// Process that file
+	(*map)(files[file_to_proc]); // Calling the function from the thread
+    }
+}
+
+
 void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, Partitioner partition) {
 
+    // =========== Creating a single hash table for testing ========= 
     /*
     // Testing
     hash_table *my_hash_table;
@@ -404,7 +444,10 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     free_hash_table(my_hash_table);
     //*/
 
-    //*
+    // =========== Creating threads = # of files ====================
+    /*
+    char *files[10] = {"20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt"};
+
     // Lock for giving a file to the mapper
     pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER; 
 
@@ -429,7 +472,7 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     }
 
     // # of mappers to create 
-    int numthreads = 5; 
+    int numthreads = 10; 
    
     printf("Input File: %s\n", argv[1]);
 
@@ -439,12 +482,12 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     // Create the # of mappers
     int file_proc = 0;
     for ( ; file_proc < numthreads; ) {
-	Pthread_mutex_lock(&file_lock);
-	Pthread_create(&mappers_id[file_proc], NULL, (void *)(*map), argv[1]);
-	file_proc++;
-	Pthread_mutex_unlock(&file_lock);
+        Pthread_mutex_lock(&file_lock);
+        Pthread_create(&mappers_id[file_proc], NULL, (void *)(*map), files[file_proc]);
+        file_proc++;
+        Pthread_mutex_unlock(&file_lock);
     }
-
+   
     // Join all the mappers
     for (int i = 0; i < numthreads; i++) {
         Pthread_join(mappers_id[i], NULL);
@@ -454,6 +497,71 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     
     // Free the partition created
     //printf("Starting to free the partitions...\n\n");
+    free_partition(parts);
+    //*/
+    
+    // =========== Any # of mappers can map any # of files ====================
+    //*
+    // Setting the global variables
+    partFunc = partition;
+    numReducers = num_reducers;
+    numMappers = num_mappers;
+
+    // parts is a global variable for the partitions
+    parts = malloc(sizeof(hash_table*) * numReducers);
+    
+    if (parts == 0) {
+	printf("cannot allocate memory for partitions\n");
+	return;
+    }
+    
+    // Creating one hash table for each partition
+    for (int i = 0; i < numReducers; i++) {
+	hash_table *temp_table;
+	temp_table = create_hash_table(hash_table_size);
+	parts[i] = temp_table;
+    }
+
+    // Initialize files processed
+    filesProcessed = 0; // Set it to 1 when using arc and argv because the first value is the program name
+    
+    // TODO: Changing the function threads are calling
+    char *files[10] = {"20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt"};
+
+    // Lock for giving a file to the mapper
+    pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER; 
+    
+    // # of mappers to create 
+    int numthreads = 5; 
+    
+    // Getting this from argc  
+    int numFiles = 10; 
+    
+    // Setting the structure to send parameters to process_files
+    proc_files params;
+    params.numFiles = numFiles;
+    params.files = files;
+    params.map = map;
+    params.file_lock = file_lock;
+    
+    // Variable for mappers
+    pthread_t mappers_id[numthreads];
+   
+    // Function to call from each thread
+    void (*pf)(proc_files*) = &process_files;
+
+    // Calling process_files from threads
+    for (int i = 0; i < numthreads; i++) {
+        Pthread_create(&mappers_id[i], NULL, (void*)pf, (void*)&params);
+    }
+    
+    // Join all the mappers
+    for (int i = 0; i < numthreads; i++) {
+        Pthread_join(mappers_id[i], NULL);
+    }
+
+    //dump_partitions(parts);
+
     free_partition(parts);
     //*/
 }
