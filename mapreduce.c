@@ -20,6 +20,7 @@ typedef struct node_t {
     char *key;
     node_value *value;
     struct node_t *next;
+    void *next_value;
 } node;
 
 //hash table structure
@@ -113,6 +114,7 @@ int hash(hash_table *hashtable, char *str) {
  * otherwise returns NULL
  */
 node* lookup(hash_table *hashtable, char *str){
+
     node *list;
     unsigned int hashval = hash(hashtable, str);
 
@@ -170,8 +172,21 @@ int insert(hash_table *hashtable, char *str, char* val){
 	new_value->value = strdup(val);
 	new_value->next = NULL;
 	new_list->value = new_value;
+
+	// Updating next_value for get_next
+	new_list->next_value = (void*)new_value;
+    
+	//if (strcmp(new_list->key, "please") == 0) {
+	//    printf("key: %s, new_list->value: %p, new_list->next_value: %p\n", new_list->key, new_list->value, new_list->next_value);
+	//}
+
+    
     } else {
 	//printf("--- Inside add value: %s\n", key->key);
+
+	//if (strcmp(key->key, "please") == 0) {
+	//    printf("key: %s, new_list->value: %p, new_list->next_value: %p\n", key->key, key->value, key->next_value);
+	//}
 
 	// Allocate value for the value node
 	if((new_value = malloc(sizeof(node_value))) == NULL) {
@@ -180,7 +195,7 @@ int insert(hash_table *hashtable, char *str, char* val){
 	new_value->value = strdup(val);
 	new_value->next = key->value;
 	key->value = new_value;
-    
+	key->next_value = (void*)new_value; // Updating the next value for get_next
 	
 	//list_t_value *temp;
 	//for(temp = key->value; temp != NULL; temp = temp->next) {
@@ -427,6 +442,33 @@ void process_files(proc_files* params) {
     }
 }
 
+char* get_next(char* key, int partition_num) {
+    //printf("---- Inside get_next ----\n");
+    
+    node* n = lookup(parts[partition_num], key);
+    //node_value* v = n->value;
+
+    //for ( ; v!= NULL; v = v->next)	{
+    //    printf("v: %p, value: %s\n", v, v->value);
+    //}
+   
+    char* value_to_ret = NULL;
+    if (n->next_value != NULL) {
+	value_to_ret = ((node_value*)(n->next_value))->value;
+    } else {
+	return value_to_ret;
+    }
+    //printf("next_value is pointing to %p\n", n->next_value);
+    //printf("value is pointing to %p\n", (void*)n->value);
+    //printf("key: %s, next_value: %s\n", n->key, ((node_value*)(n->next_value))->value);
+    node_value* temp = ((node_value*)(n->next_value));
+    n->next_value = (void*)temp->next;
+    
+    printf("n->next_value: %p\n", n->next_value);
+    
+    return value_to_ret;
+}
+
 
 void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, Partitioner partition) {
 
@@ -444,62 +486,6 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     free_hash_table(my_hash_table);
     //*/
 
-    // =========== Creating threads = # of files ====================
-    /*
-    char *files[10] = {"20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt", "20k.txt"};
-
-    // Lock for giving a file to the mapper
-    pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER; 
-
-    // Setting the global variables
-    partFunc = partition;
-    numReducers = num_reducers;
-    numMappers = num_mappers;
-
-    // parts is a global variable for the partitions
-    parts = malloc(sizeof(hash_table*) * numReducers);
-    
-    if (parts == 0) {
-	printf("cannot allocate memory for partitions\n");
-	return;
-    }
-    
-    // Creating one hash table for each partition
-    for (int i = 0; i < numReducers; i++) {
-	hash_table *temp_table;
-	temp_table = create_hash_table(hash_table_size);
-	parts[i] = temp_table;
-    }
-
-    // # of mappers to create 
-    int numthreads = 10; 
-   
-    printf("Input File: %s\n", argv[1]);
-
-    // Variable for mappers
-    pthread_t mappers_id[numthreads];
-
-    // Create the # of mappers
-    int file_proc = 0;
-    for ( ; file_proc < numthreads; ) {
-        Pthread_mutex_lock(&file_lock);
-        Pthread_create(&mappers_id[file_proc], NULL, (void *)(*map), files[file_proc]);
-        file_proc++;
-        Pthread_mutex_unlock(&file_lock);
-    }
-   
-    // Join all the mappers
-    for (int i = 0; i < numthreads; i++) {
-        Pthread_join(mappers_id[i], NULL);
-    }
-
-    dump_partitions(parts);
-    
-    // Free the partition created
-    //printf("Starting to free the partitions...\n\n");
-    free_partition(parts);
-    //*/
-    
     // =========== Any # of mappers can map any # of files ====================
     //*
     // Setting the global variables
@@ -514,14 +500,14 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 	printf("cannot allocate memory for partitions\n");
 	return;
     }
+   
     
     // Creating one hash table for each partition
     for (int i = 0; i < numReducers; i++) {
-	hash_table *temp_table;
-	temp_table = create_hash_table(hash_table_size);
-	parts[i] = temp_table;
+	parts[i] = create_hash_table(hash_table_size);
     }
 
+    
     // Initialize files processed
     filesProcessed = 0; // Set it to 1 when using arc and argv because the first value is the program name
     
@@ -561,6 +547,31 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     }
 
     //dump_partitions(parts);
+   
+    // Staring reducing the data
+
+    char *key = "please";
+    for (int i = 0; i < 11; i++) {
+	char* val = get_next(key, 9);
+	printf("Got the value\n");
+	if (val != NULL) {
+	    printf("%s\n", val);
+	}
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     free_partition(parts);
     //*/
