@@ -59,7 +59,7 @@ int numMappers;
 int filesProcessed;
 
 // ====== Wrappers for pthread library ==========
-#define hash_table_size 101
+#define hash_table_size 571163
 #define Pthread_mutex_lock(m)                                   assert(pthread_mutex_lock(m) == 0);
 #define Pthread_mutex_unlock(m)                                 assert(pthread_mutex_unlock(m) == 0);
 #define Pthread_create(thread, attr, start_routine, arg)        assert(pthread_create(thread, attr, start_routine, arg) == 0);
@@ -577,24 +577,24 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 
 
     // Initialize files processed
-    filesProcessed = 0; // Set it to 1 when using arc and argv because the first value is the program name
+    filesProcessed = 1; // Set it to 1 when using arc and argv because the first value is the program name
 
     // TODO: Changing the function threads are calling
-    char *files[10] = {"20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt"};
+    //char *files[10] = {"20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt"};
 
     // Lock for giving a file to the mapper
     pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER; 
 
     // # of mappers to create 
-    int numthreads = 5; 
+    int numthreads = num_mappers; 
 
     // Getting this from argc  
-    int numFiles = 10; 
+    int numFiles = argc; 
 
     // Setting the structure to send parameters to process_files
     proc_files params;
     params.numFiles = numFiles;
-    params.files = files;
+    params.files = argv; // setting the input files
     params.map = map;
     params.file_lock = file_lock;
 
