@@ -529,6 +529,7 @@ void process_data_struct(proc_ds* params) {
     //printf("params->parts_num: %d\n", params->parts_num);
     
     Reducer reduce = params->reduce;
+    qsort(parts[params->parts_num]->uniq_keys, parts[params->parts_num]->num_keys, sizeof(sort), comp_sort);
 
     for (int i = 0; i < parts[params->parts_num]->num_keys; i++) {
 	//printf("i: %d, Key to reduce: %s\n", i, parts[params->parts_num]->uniq_keys[i]->key);
@@ -635,9 +636,9 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     //}
     
     // Sorting the keys
-    for (int i = 0; i < numReducers; i++) {
-        qsort(parts[i]->uniq_keys, parts[i]->num_keys, sizeof(sort), comp_sort);
-    }
+    //for (int i = 0; i < numReducers; i++) {
+    //    qsort(parts[i]->uniq_keys, parts[i]->num_keys, sizeof(sort), comp_sort);
+    //}
     
     // Starting reducing the data
     //char *key = "zur";
