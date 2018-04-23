@@ -35,6 +35,7 @@ typedef struct hash_table_t {
     pthread_mutex_t **lock; 
     sort** uniq_keys;
     int num_keys;
+    void *next_value;
 } hash_table;
 
 // Struct for sending parameters to mapper threads
@@ -111,6 +112,10 @@ hash_table *create_hash_table(int size) {
 
     // setting num_keys to zero
     new_table->num_keys = 0;
+
+    // set the next_value of the hast_table to NULL
+    new_table->next_value = NULL;
+
 
     /*initialize the lements of the table*/
     for(int i = 0; i < size; i++)  {
@@ -489,7 +494,7 @@ void process_files(proc_files* params) {
 	filesProcessed++;
 	Pthread_mutex_unlock(&file_lock);
 
-	printf("Thread: %lu, File being processed: %d->%s\n", pthread_self(), file_to_proc, files[file_to_proc]);
+	//printf("Thread: %lu, File being processed: %d->%s\n", pthread_self(), file_to_proc, files[file_to_proc]);
 
 	// Process that file
 	(*map)(files[file_to_proc]); // Calling the function from the thread
@@ -498,25 +503,69 @@ void process_files(proc_files* params) {
 
 char* get_next(char* key, int partition_num) {
     //printf("---- Inside get_next ----\n");
+    
+    //hash_table *hashtable = parts[partition_num]; 
 
-    node* n = lookup(parts[partition_num], key);
+    //if (hashtable->next_value == NULL) {
+    //    printf("hashtable->next_value is NULL\n");
+    //    node* n = lookup(parts[partition_num], key);
+    //    hashtable->next_value = (void*)n->value;
+    //    printf("hashtable->next_value: %p\n", hashtable->next_value);
+    //    printf("n->value: %p\n", n->value);
+    //}
+
+    //
+    //// getting the value to return
+    //char* value_to_ret = NULL;
+    //if (hashtable->next_value != NULL) {
+    //    node_value* temp = (node_value*)(hashtable->next_value);
+    //    printf("temp: %p, value: %s\n", temp, temp->value);
+    //    value_to_ret = temp->value;
+    //
+    //    // Updating the pointer
+    //    hashtable->next_value = temp->next;
+    //    printf("hashtable->next_value: %p\n", hashtable->next_value);
+    //} else {
+    //    hashtable->next_value = NULL;
+    //}
+
+    //return value_to_ret;
+
+    //printf("KEY: %s\n", key);
+
+
+    hash_table *hashtable = parts[partition_num]; 
+    
+    node* n = NULL;
+    if (hashtable->next_value == NULL) {
+	n = lookup(parts[partition_num], key);
+	//printf("hashtable next value %p \n",hashtable->next_value);
+	hashtable->next_value = n->next_value;
+	n->next_value = NULL;//(void*)temp->next;
+    }
     //node_value* v = n->value;
 
     //for ( ; v!= NULL; v = v->next)	{
     //    printf("v: %p, value: %s\n", v, v->value);
     //}
 
+    //printf("hashtable->next_value: %p\n", hashtable->next_value);
+    //printf("n->next_value: %p\n", n->next_value);
+    
+
+
     char* value_to_ret = NULL;
-    if (n->next_value != NULL) {
-	value_to_ret = ((node_value*)(n->next_value))->value;
+    if (hashtable->next_value != NULL) {
+	node_value* temp = ((node_value*)(hashtable->next_value));
+	value_to_ret = temp->value;
+	hashtable->next_value = temp->next;
     } else {
 	return value_to_ret;
     }
     //printf("next_value is pointing to %p\n", n->next_value);
     //printf("value is pointing to %p\n", (void*)n->value);
     //printf("key: %s, next_value: %s\n", n->key, ((node_value*)(n->next_value))->value);
-    node_value* temp = ((node_value*)(n->next_value));
-    n->next_value = (void*)temp->next;
+    //node_value* temp = ((node_value*)(n->next_value));
 
     //printf("n->next_value: %p\n", n->next_value);
 
@@ -524,10 +573,10 @@ char* get_next(char* key, int partition_num) {
 }
 
 void process_data_struct(proc_ds* params) {
-    
+
     //printf("--- Inside process_data_struct ---\n");
     //printf("params->parts_num: %d\n", params->parts_num);
-    
+
     Reducer reduce = params->reduce;
     qsort(parts[params->parts_num]->uniq_keys, parts[params->parts_num]->num_keys, sizeof(sort), comp_sort);
 
@@ -582,6 +631,8 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     // TODO: Changing the function threads are calling
     //char *files[10] = {"20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt", "20k-1.txt", "20k.txt"};
 
+    //char *files[1] = {"temp.txt"};
+
     // Lock for giving a file to the mapper
     pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER; 
 
@@ -634,12 +685,12 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     //        printf("%s\n", parts[i]->uniq_keys[j]->key);
     //    }
     //}
-    
+
     // Sorting the keys
     //for (int i = 0; i < numReducers; i++) {
     //    qsort(parts[i]->uniq_keys, parts[i]->num_keys, sizeof(sort), comp_sort);
     //}
-    
+
     // Starting reducing the data
     //char *key = "zur";
     //for (int i = 0; i < 11; i++) {
@@ -649,13 +700,13 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     //    }
     //}
 
-     
+
     //int red = 1;
 
     pthread_t reducers_id[numReducers];
-    
+
     proc_ds params_reducers[numReducers];
-    
+
     for (int i = 0; i < numReducers; i++) {
 	params_reducers[i].parts_num = i;
 	params_reducers[i].reduce = reduce;
@@ -671,7 +722,7 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     for (int i = 0; i < numReducers; i++) {
 	Pthread_join(reducers_id[i], NULL);
     }
-    
+
 
 
 

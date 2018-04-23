@@ -31,6 +31,9 @@ void Map(char *file_name) {
 void Reduce(char *key, Getter get_next, int partition_number) {
     int count = 0;
     char *value;
+    
+    //printf("key: %s\n", key);
+
     while ((value = get_next(key, partition_number)) != NULL)
 	count++;
     
