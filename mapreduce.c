@@ -60,7 +60,7 @@ int filesProcessed;
 pthread_mutex_t global_file_lock = PTHREAD_MUTEX_INITIALIZER; 
 
 // ====== Wrappers for pthread library ==========
-#define hash_table_size 571163
+#define hash_table_size 100003
 #define Pthread_mutex_lock(m)                                   assert(pthread_mutex_lock(m) == 0);
 #define Pthread_mutex_unlock(m)                                 assert(pthread_mutex_unlock(m) == 0);
 #define Pthread_create(thread, attr, start_routine, arg)        assert(pthread_create(thread, attr, start_routine, arg) == 0);
