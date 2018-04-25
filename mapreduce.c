@@ -36,6 +36,7 @@ typedef struct hash_table_t {
     sort** uniq_keys;
     int num_keys;
     void *next_value;
+    pthread_mutex_t *memory_lock; 
 } hash_table;
 
 // Struct for sending parameters to mapper threads
@@ -58,9 +59,10 @@ int numReducers;
 int numMappers;
 int filesProcessed;
 pthread_mutex_t global_file_lock = PTHREAD_MUTEX_INITIALIZER; 
+//pthread_mutex_t force_lock = PTHREAD_MUTEX_INITIALIZER; 
 
 // ====== Wrappers for pthread library ==========
-#define hash_table_size 100003
+#define hash_table_size 100003 //102161
 #define Pthread_mutex_lock(m)                                   assert(pthread_mutex_lock(m) == 0);
 #define Pthread_mutex_unlock(m)                                 assert(pthread_mutex_unlock(m) == 0);
 #define Pthread_create(thread, attr, start_routine, arg)        assert(pthread_create(thread, attr, start_routine, arg) == 0);
@@ -83,7 +85,7 @@ hash_table *create_hash_table(int size) {
     // New hash table
     hash_table *new_table;
 
-    if(size<1)
+    if(size < 1)
 	return NULL;
 
     // allocating mem for the table structure
@@ -103,6 +105,10 @@ hash_table *create_hash_table(int size) {
     if(new_table->lock  ==  NULL) {
 	return NULL;
     }
+
+    // Allocate memory for memory_lock
+    new_table->memory_lock = malloc(sizeof(pthread_mutex_t)); // Allocating memory for the lock
+    pthread_mutex_init(new_table->memory_lock, NULL); // Initializing the lock
 
     // Setting sort to NULL
     new_table->uniq_keys = NULL;
@@ -162,7 +168,7 @@ node* lookup(hash_table *hashtable, char *str){
 /* Inserts the given key in the given hashtable by creating
  * new objects of node and node_value type
  */
-int insert(hash_table *hashtable, char *str, char* val){
+int insert(hash_table *hashtable, char *str, char* val, int partsNum){
 
     node *new_list;
     node_value *new_value;
@@ -201,6 +207,7 @@ int insert(hash_table *hashtable, char *str, char* val){
 	new_list->next_value = (void*)new_value;
 
 	// Incrementing the count of keys in a hashtable
+	pthread_mutex_lock(hashtable->memory_lock); 
 	hashtable->num_keys++; 
 
 	// Allocating memory for keys
@@ -209,6 +216,7 @@ int insert(hash_table *hashtable, char *str, char* val){
 	// Adding key to the sort array
 	hashtable->uniq_keys[hashtable->num_keys - 1] = malloc(sizeof(sort));
 	hashtable->uniq_keys[hashtable->num_keys - 1]->key = strdup(str);
+	pthread_mutex_unlock(hashtable->memory_lock); 
     } else {
 	new_value->value = strdup(val);
 	new_value->next = key->value;
@@ -239,8 +247,6 @@ void free_values(node_value* nv) {
     }
 }
 
-
-
 void free_node(node* n) {
     // Going over all the values for the given bucket
     node* temp = n;
@@ -251,7 +257,6 @@ void free_node(node* n) {
 	free(temp); // Freeing hte node of the linkedlist
     }
 }
-
 
 void free_hash_table(hash_table *ht) {
     for (int i = 0; i < ht->num_keys; i++) {
@@ -269,6 +274,7 @@ void free_hash_table(hash_table *ht) {
 	    free_node(temp);
 	}
     }
+    free(ht->memory_lock);
     free(ht->lock);
     free(ht->table); // Freeing the memory for the hashtable - array
     free(ht); // Freeing the hashtable pointer
@@ -341,7 +347,9 @@ void dump_partitions(hash_table** p) {
 
 void MR_Emit(char *key, char *value) {
     unsigned long partNum = (*partFunc)(key, numReducers);
-    insert(parts[partNum], key, value);
+    //Pthread_mutex_lock(&force_lock);
+    insert(parts[partNum], key, value, partNum);
+    //Pthread_mutex_unlock(&force_lock);
 }
 
 unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
@@ -416,7 +424,6 @@ void process_data_struct(proc_ds* params) {
 
 
 void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce, int num_reducers, Partitioner partition) {
-
     // Setting the global variables
     partFunc = partition;
     numReducers = num_reducers;
@@ -430,12 +437,10 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
 	return;
     }
 
-
     // Creating one hash table for each partition
     for (int i = 0; i < numReducers; i++) {
 	parts[i] = create_hash_table(hash_table_size);
     }
-
 
     // Initialize files processed
     filesProcessed = 1; // Set it to 1 when using arc and argv because the first value is the program name
@@ -472,7 +477,6 @@ void MR_Run(int argc, char *argv[], Mapper map, int num_mappers, Reducer reduce,
     //dump_partitions(parts);
 
     pthread_t reducers_id[numReducers];
-
     proc_ds params_reducers[numReducers];
 
     for (int i = 0; i < numReducers; i++) {
